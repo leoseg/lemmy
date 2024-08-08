@@ -43,6 +43,7 @@ pub async fn search(
   let page = data.page;
   let limit = data.limit;
   let sort = data.sort;
+  let search_title_only = data.search_title_only;
   let listing_type = data.listing_type;
   let search_type = data.type_.unwrap_or(SearchType::All);
   let community_id = if let Some(name) = &data.community_name {
@@ -66,6 +67,7 @@ pub async fn search(
         creator_id: (creator_id),
         local_user: (local_user_view.as_ref()),
         search_term: (Some(q)),
+        search_title_only: (search_title_only),
         page: (page),
         limit: (limit),
         ..Default::default()

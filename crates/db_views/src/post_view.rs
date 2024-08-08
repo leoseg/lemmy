@@ -383,13 +383,19 @@ fn queries<'a>() -> Queries<
 
     if let Some(search_term) = &options.search_term {
       let searcher = fuzzy_search(search_term);
-      query = query
-        .filter(
-          post::name
-            .ilike(searcher.clone())
-            .or(post::body.ilike(searcher)),
-        )
-        .filter(not(post::removed.or(post::deleted)));
+      if options.search_title_only == Some(true) {
+        query = query
+          .filter(post::name.ilike(searcher))
+          .filter(not(post::removed.or(post::deleted)));
+      } else {
+        query = query
+          .filter(
+            post::name
+              .ilike(searcher.clone())
+              .or(post::body.ilike(searcher)),
+          )
+          .filter(not(post::removed.or(post::deleted)));
+      }
     }
 
     // If there is a content warning, show nsfw content by default.
@@ -630,6 +636,7 @@ pub struct PostQuery<'a> {
   pub page_before_or_equal: Option<PaginationCursorData>,
   pub page_back: bool,
   pub show_hidden: bool,
+  pub search_title_only: Option<bool>,
 }
 
 impl<'a> PostQuery<'a> {
@@ -787,6 +794,7 @@ mod tests {
   const POST_BY_BLOCKED_PERSON: &str = "post by blocked person";
   const POST_BY_BOT: &str = "post by bot";
   const POST: &str = "post";
+  const POST_WITH_ANOTHER_TITLE: &str  = "Another title";
 
   fn names(post_views: &[PostView]) -> Vec<&str> {
     post_views.iter().map(|i| i.post.name.as_str()).collect()
@@ -1029,6 +1037,60 @@ mod tests {
       read_post_listing_single_no_person
     );
 
+    cleanup(data, pool).await
+  }
+
+    #[tokio::test]
+  #[serial]
+  async fn post_listing_title_only() -> LemmyResult<()> {
+    let pool = &build_db_pool().await?;
+    let pool = &mut pool.into();
+    let data = init_data(pool).await?;
+
+
+    // A post which contains the search them 'Post' not in the title (but in the body)
+    let new_post = PostInsertForm::builder()
+    .name( POST_WITH_ANOTHER_TITLE.to_string())
+    .creator_id(data.local_user_view.person.id)
+    .community_id(data.inserted_community.id)
+    .language_id(Some(LanguageId(47)))
+        .body(Some("Post".to_string()))
+    .build();
+
+    let inserted_post = Post::create(pool, &new_post).await?;
+
+
+    let read_post_listing_by_title_only = PostQuery {
+      community_id: Some(data.inserted_community.id),
+      local_user: None,
+      search_term: Some("Post".to_string()),
+      search_title_only: Some(true),
+      ..data.default_post_query()
+    }
+    .list(&data.site, pool)
+    .await?;
+
+    let read_post_listing  = PostQuery {
+      community_id: Some(data.inserted_community.id),
+      local_user: None,
+      search_term: Some("Post".to_string()),
+      ..data.default_post_query()
+    }
+    .list(&data.site, pool)
+    .await?;
+
+    // Should be 4 posts when we do not search for title only
+    assert_eq!(
+      vec![POST_WITH_ANOTHER_TITLE, POST_BY_BOT, POST, POST_BY_BLOCKED_PERSON],
+      names(&read_post_listing)
+    );
+
+    // Should be 3 posts when we search for title only
+   assert_eq!(
+      vec![POST_BY_BOT, POST, POST_BY_BLOCKED_PERSON],
+      names(&read_post_listing_by_title_only)
+    );
+    Post::delete(pool, inserted_post.id).await?;
     cleanup(data, pool).await
   }
 
@@ -1578,7 +1640,6 @@ mod tests {
         .ok_or(LemmyErrorType::CouldntFindPost)?
         .hidden
     );
-
     cleanup(data, pool).await
   }
 
