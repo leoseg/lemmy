@@ -1040,7 +1040,7 @@ mod tests {
     cleanup(data, pool).await
   }
 
-    #[tokio::test]
+  #[tokio::test]
   #[serial]
   async fn post_listing_title_only() -> LemmyResult<()> {
     let pool = &build_db_pool().await?;
